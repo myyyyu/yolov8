@@ -101,6 +101,10 @@ from .transformer import (
     TransformerEncoderLayer,
     TransformerLayer,
 )
+from .contmix import (
+    ContMixBlock,
+    ContMixC2f,
+)
 
 __all__ = (
     "Conv",
@@ -179,4 +183,6 @@ __all__ = (
     "TorchVision",
     "Index",
     "A2C2f",
+    "ContMixBlock",
+    "ContMixC2f",
 )
