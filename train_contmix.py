@@ -11,7 +11,7 @@ def main():
     
     # 设置路径
     model_config = "ultralytics/cfg/models/v8/yolov8-contmix.yaml"
-    data_config = "/kaggle/working/underwater-plastic-pollution-detection/underwater_plastics/data.yaml"
+    data_config = "/kaggle/working/underwater_plastics/my_dataset.yaml"#"underwater_plastics/data.yaml"
     pretrained = "yolov8n.pt"
     
     print(f"模型配置: {model_config}")
