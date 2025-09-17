@@ -105,6 +105,11 @@ from .contmix import (
     ContMixBlock,
     ContMixC2f,
 )
+from .cpraformer import (
+    CPRAformerC2f,
+    LightCPRAformerC2f,
+    TransformerBlock as CPRATransformerBlock,
+)
 
 __all__ = (
     "Conv",
@@ -185,4 +190,7 @@ __all__ = (
     "A2C2f",
     "ContMixBlock",
     "ContMixC2f",
+    "CPRAformerC2f",
+    "LightCPRAformerC2f",
+    "CPRATransformerBlock",
 )
