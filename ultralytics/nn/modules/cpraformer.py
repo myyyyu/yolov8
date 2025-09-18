@@ -121,10 +121,19 @@ class ComplexFFT(nn.Module):
         input_dtype = x.dtype
         if x.dtype == torch.float16:
             x = x.float()
+        
+        # 检查输入是否包含NaN或Inf
+        if torch.isnan(x).any() or torch.isinf(x).any():
+            x = torch.nan_to_num(x, nan=0.0, posinf=1e6, neginf=-1e6)
             
         x_fft = torch.fft.fft2(x, dim=(-2, -1))
         real = x_fft.real
         imag = x_fft.imag
+        
+        # 检查FFT结果是否有效
+        if torch.isnan(real).any() or torch.isnan(imag).any():
+            real = torch.nan_to_num(real, nan=0.0)
+            imag = torch.nan_to_num(imag, nan=0.0)
         
         # Convert back to original dtype
         if input_dtype == torch.float16:
@@ -144,10 +153,19 @@ class ComplexIFFT(nn.Module):
         if real.dtype == torch.float16:
             real = real.float()
             imag = imag.float()
+        
+        # 检查输入是否包含NaN或Inf
+        if torch.isnan(real).any() or torch.isnan(imag).any():
+            real = torch.nan_to_num(real, nan=0.0, posinf=1e6, neginf=-1e6)
+            imag = torch.nan_to_num(imag, nan=0.0, posinf=1e6, neginf=-1e6)
             
         x_complex = torch.complex(real, imag)
         x_ifft = torch.fft.ifft2(x_complex, dim=(-2, -1))
         result = x_ifft.real
+        
+        # 检查IFFT结果是否有效
+        if torch.isnan(result).any() or torch.isinf(result).any():
+            result = torch.nan_to_num(result, nan=0.0, posinf=1e6, neginf=-1e6)
         
         # Convert back to original dtype
         if input_dtype == torch.float16:
@@ -232,13 +250,23 @@ class Attention(nn.Module):
         k = rearrange(k, 'b (head c) h w -> b head c (h w)', head=self.num_heads)
         v = rearrange(v, 'b (head c) h w -> b head c (h w)', head=self.num_heads)
 
-        q = torch.nn.functional.normalize(q, dim=-1)
-        k = torch.nn.functional.normalize(k, dim=-1)
+        q = torch.nn.functional.normalize(q, dim=-1, eps=1e-8)
+        k = torch.nn.functional.normalize(k, dim=-1, eps=1e-8)
 
         _, _, C, _ = q.shape
         # Ensure we have at least 1 and at most C for dynamic_k
         gate_val = self.gate(x).view(b, -1).mean().clamp(0.1, 1.0)
-        dynamic_k = max(1, min(C, int(C * gate_val)))
+        
+        # 防止NaN错误和确保数值稳定性
+        if torch.isnan(gate_val).any() or torch.isinf(gate_val).any():
+            gate_val = torch.tensor(0.5, device=gate_val.device, dtype=gate_val.dtype)
+        
+        # 确保gate_val在有效范围内并安全转换
+        gate_val = torch.clamp(gate_val, 0.1, 1.0)
+        try:
+            dynamic_k = max(1, min(C, int(C * gate_val.item())))
+        except (ValueError, OverflowError):
+            dynamic_k = max(1, C // 2)  # 使用默认值
         
         # Fix temperature indexing for single head case
         temp = self.temperature if self.num_heads > 1 else self.temperature[0]
@@ -251,7 +279,13 @@ class Attention(nn.Module):
             mask.scatter_(-1, index, 1.)
             attn = torch.where(mask > 0, attn, torch.full_like(attn, float('-inf')))
 
+        # 确保softmax数值稳定性
+        attn = torch.clamp(attn, min=-1e8, max=1e8)  # 防止极值
         attn = attn.softmax(dim=-1)
+        
+        # 检查softmax结果
+        if torch.isnan(attn).any() or torch.isinf(attn).any():
+            attn = torch.ones_like(attn) / attn.size(-1)  # 均匀分布作为fallback
         out1 = (attn @ v)
         out2 = (attn @ v)
         out3 = (attn @ v)
@@ -270,7 +304,7 @@ class Attention(nn.Module):
 
         x = torch.cat([attened_x, conv_x], dim=1)
         out = self.project_out(x)
-        out = self.fft(out)
+        # out = self.fft(out)  # 注释掉FFT操作避免NaN问题
         return out
 
 

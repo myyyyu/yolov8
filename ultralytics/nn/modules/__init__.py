@@ -110,6 +110,9 @@ from .cpraformer import (
     LightCPRAformerC2f,
     TransformerBlock as CPRATransformerBlock,
 )
+from .simple_cpra import (
+    SimpleCPRAformerC2f,
+)
 
 __all__ = (
     "Conv",
@@ -193,4 +196,5 @@ __all__ = (
     "CPRAformerC2f",
     "LightCPRAformerC2f",
     "CPRATransformerBlock",
+    "SimpleCPRAformerC2f",
 )
