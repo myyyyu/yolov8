@@ -109,6 +109,8 @@ from .cpraformer import (
     CPRAformerC2f,
     LightCPRAformerC2f,
     TransformerBlock as CPRATransformerBlock,
+    CPRA_MSEC2f,
+    MultiScaleEnhancement,
 )
 from .simple_cpra import (
     SimpleCPRAformerC2f,
@@ -196,5 +198,7 @@ __all__ = (
     "CPRAformerC2f",
     "LightCPRAformerC2f",
     "CPRATransformerBlock",
+    "CPRA_MSEC2f",
+    "MultiScaleEnhancement",
     "SimpleCPRAformerC2f",
 )

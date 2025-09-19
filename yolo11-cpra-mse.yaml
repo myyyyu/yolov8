@@ -1,0 +1,130 @@
+# YOLOv11s with CPRA-MSEC2f integration
+# Parameters: 9.4M GFLOPs: 21.5
+
+# Define number of classes for COCO
+nc: 80
+
+# Define class names (COCO)
+names:
+  0: person
+  1: bicycle
+  2: car
+  3: motorcycle
+  4: airplane
+  5: bus
+  6: train
+  7: truck
+  8: boat
+  9: traffic light
+  10: fire hydrant
+  11: stop sign
+  12: parking meter
+  13: bench
+  14: bird
+  15: cat
+  16: dog
+  17: horse
+  18: sheep
+  19: cow
+  20: elephant
+  21: bear
+  22: zebra
+  23: giraffe
+  24: backpack
+  25: umbrella
+  26: handbag
+  27: tie
+  28: suitcase
+  29: frisbee
+  30: skis
+  31: snowboard
+  32: sports ball
+  33: kite
+  34: baseball bat
+  35: baseball glove
+  36: skateboard
+  37: surfboard
+  38: tennis racket
+  39: bottle
+  40: wine glass
+  41: cup
+  42: fork
+  43: knife
+  44: spoon
+  45: bowl
+  46: banana
+  47: apple
+  48: sandwich
+  49: orange
+  50: broccoli
+  51: carrot
+  52: hot dog
+  53: pizza
+  54: donut
+  55: cake
+  56: chair
+  57: couch
+  58: potted plant
+  59: bed
+  60: dining table
+  61: toilet
+  62: tv
+  63: laptop
+  64: mouse
+  65: remote
+  66: keyboard
+  67: cell phone
+  68: microwave
+  69: oven
+  70: toaster
+  71: sink
+  72: refrigerator
+  73: book
+  74: clock
+  75: vase
+  76: scissors
+  77: teddy bear
+  78: hair drier
+  79: toothbrush
+
+# Model scales
+scales:
+  n: [0.25, 0.25, 1024]  # YOLOv11n summary: 319 layers,  2608760 parameters,  2608744 gradients,   6.5 GFLOPs
+  s: [0.50, 0.50, 1024]  # YOLOv11s summary: 319 layers,  9441816 parameters,  9441800 gradients,  21.5 GFLOPs
+  m: [0.50, 0.75, 512]   # YOLOv11m summary: 409 layers, 20116296 parameters, 20116280 gradients,  68.5 GFLOPs
+  l: [0.50, 1.00, 512]   # YOLOv11l summary: 631 layers, 25398936 parameters, 25398920 gradients,  86.9 GFLOPs
+  x: [0.50, 1.25, 512]   # YOLOv11x summary: 631 layers, 56966296 parameters, 56966280 gradients, 194.9 GFLOPs
+
+# Model architecture
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]      # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]     # 1-P2/4
+  - [-1, 2, CPRA_MSEC2f, [128]]    # 2-P3/8 - CPRA-MSE Enhanced
+  - [-1, 1, Conv, [256, 3, 2]]     # 3-P3/8
+  - [-1, 2, CPRA_MSEC2f, [256]]    # 4-P4/16 - CPRA-MSE Enhanced  
+  - [-1, 1, Conv, [512, 3, 2]]     # 5-P4/16
+  - [-1, 2, C2f, [512]]            # 6-P5/32
+  - [-1, 1, Conv, [1024, 3, 2]]    # 7-P5/32
+  - [-1, 2, C2f, [1024]]           # 8-P6/64
+  - [-1, 1, SPPF, [1024, 5]]       # 9
+
+# YOLOv11 head
+head:
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]           # 10
+  - [[-1, 6], 1, Concat, [1]]                            # 11 cat backbone P5
+  - [-1, 2, C2f, [512]]                                  # 12
+  
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]           # 13
+  - [[-1, 4], 1, Concat, [1]]                            # 14 cat backbone P4
+  - [-1, 2, C2f, [256]]                                  # 15 (P3/8-small)
+  
+  - [-1, 1, Conv, [256, 3, 2]]                           # 16
+  - [[-1, 12], 1, Concat, [1]]                           # 17 cat head P4
+  - [-1, 2, C2f, [512]]                                  # 18 (P4/16-medium)
+  
+  - [-1, 1, Conv, [512, 3, 2]]                           # 19
+  - [[-1, 9], 1, Concat, [1]]                            # 20 cat head P5
+  - [-1, 2, C2f, [1024]]                                 # 21 (P5/32-large)
+  
+  - [[15, 18, 21], 1, Detect, [nc]]                      # 22 Detect(P3, P4, P5)

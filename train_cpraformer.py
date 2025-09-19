@@ -16,7 +16,7 @@ def train_cpraformer():
     print("🚀 Starting YOLOv8-CPRAformer Training...")
     
     # 使用相对路径
-    model_path = "ultralytics/cfg/models/v8/yolov8-cpraformer.yaml"
+    model_path = "ultralytics/cfg/models/v8/yolov8-cpra-mse.yaml"
     data_path = "underwater_plastics/data.yaml"
     
     try:

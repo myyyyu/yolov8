@@ -443,3 +443,131 @@ class SimplifiedAttention(nn.Module):
         out = out.transpose(1, 2).reshape(B, C, H, W)  # Reshape back to (B, C, H, W)
         
         return self.proj(out)
+
+
+class MultiScaleEnhancement(nn.Module):
+    """
+    多尺度增强模块 (MSE) - 专利创新点
+    Multi-Scale Enhancement for improved feature representation
+    """
+    def __init__(self, channels):
+        super().__init__()
+        # 确保通道数能被4整除
+        quarter_channels = max(1, channels // 4)
+        
+        # 多尺度卷积分支 (并行处理)
+        self.conv1x1 = nn.Conv2d(channels, quarter_channels, kernel_size=1)
+        self.conv3x3 = nn.Conv2d(channels, quarter_channels, kernel_size=3, padding=1)
+        self.conv5x5 = nn.Conv2d(channels, quarter_channels, kernel_size=5, padding=2)
+        self.conv7x7 = nn.Conv2d(channels, quarter_channels, kernel_size=7, padding=3)
+        
+        # 动态权重学习网络
+        self.weight_net = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Conv2d(channels, 4, kernel_size=1),
+            nn.Softmax(dim=1)
+        )
+        
+        # 特征融合层
+        self.fusion_conv = nn.Conv2d(channels, channels, kernel_size=1)
+        self.norm = nn.GroupNorm(1, channels)
+        self.act = nn.GELU()
+        
+    def forward(self, x):
+        # 保存残差连接的输入
+        residual = x
+        
+        # 多尺度特征提取
+        feat_1x1 = self.conv1x1(x)  # [B, channels//4, H, W]
+        feat_3x3 = self.conv3x3(x)  # [B, channels//4, H, W]
+        feat_5x5 = self.conv5x5(x)  # [B, channels//4, H, W]
+        feat_7x7 = self.conv7x7(x)  # [B, channels//4, H, W]
+        
+        # 动态权重计算
+        weights = self.weight_net(x)  # [B, 4, 1, 1]
+        w1, w3, w5, w7 = weights.chunk(4, dim=1)
+        
+        # 加权特征融合
+        multi_scale_feat = torch.cat([
+            feat_1x1 * w1,
+            feat_3x3 * w3, 
+            feat_5x5 * w5,
+            feat_7x7 * w7
+        ], dim=1)  # [B, channels, H, W]
+        
+        # 特征增强处理
+        enhanced = self.fusion_conv(multi_scale_feat)
+        enhanced = self.norm(enhanced)
+        enhanced = self.act(enhanced)
+        
+        # 残差连接
+        return enhanced + residual
+
+
+class CPRA_MSEC2f(nn.Module):
+    """
+    CPRA-MSEC2f: CPRAformer Multi-Scale Enhanced C2f
+    创新架构: CBS → split → CPRAformer → concat → MultiScaleEnhancement → 残差 → CBS
+    """
+    
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        """
+        初始化CPRA-MSEC2f模块
+        
+        Args:
+            c1 (int): 输入通道数
+            c2 (int): 输出通道数  
+            n (int): CPRAformer块的数量
+            shortcut (bool): 是否使用shortcut连接
+            g (int): 分组数 (未使用)
+            e (float): 扩展比例
+        """
+        super().__init__()
+        from ultralytics.nn.modules.conv import Conv
+        
+        self.c = int(c2 * e)  # 隐藏通道数
+        
+        # 第一个CBS: 输入扩展
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
+        
+        # CPRAformer块列表
+        self.m = nn.ModuleList([
+            TransformerBlock(
+                dim=self.c,
+                num_heads=max(1, self.c // 64),  # 自适应头数
+                ffn_expansion_factor=2.66,
+                bias=False,
+                LayerNorm_type='WithBias'
+            ) for _ in range(n)
+        ])
+        
+        # 多尺度增强模块
+        concat_channels = (2 + n) * self.c  # concat后的通道数
+        self.multi_scale_enhancement = MultiScaleEnhancement(concat_channels)
+        
+        # 最后的CBS: 输出还原
+        self.cv2 = Conv(concat_channels, c2, 1, 1)
+
+    def forward(self, x):
+        """
+        CPRA-MSEC2f前向传播
+        流程: CBS → split → CPRAformer → concat → MultiScale → 残差 → CBS
+        """
+        # 1. CBS: 输入扩展
+        y = self.cv1(x)  # [B, c1, H, W] → [B, 2*c, H, W]
+        
+        # 2. Split: 分割成两部分
+        y_list = list(y.chunk(2, 1))  # [B, c, H, W] × 2
+        
+        # 3. CPRAformer: 串行处理
+        for m in self.m:
+            y_list.append(m(y_list[-1]))  # 每个CPRAformer块处理上一个输出
+        
+        # 4. Concat: 拼接所有分支
+        concat_feat = torch.cat(y_list, 1)  # [B, (2+n)*c, H, W]
+        
+        # 5. MultiScaleEnhancement: 多尺度增强 + 残差连接
+        enhanced_feat = self.multi_scale_enhancement(concat_feat)
+        
+        # 6. CBS: 最终输出
+        return self.cv2(enhanced_feat)  # [B, (2+n)*c, H, W] → [B, c2, H, W]
